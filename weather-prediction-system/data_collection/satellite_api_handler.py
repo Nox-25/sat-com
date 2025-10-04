@@ -5,7 +5,7 @@ import json
 
 # IMPORTANT: Replace "Your_API_Key" with your actual OpenWeatherMap API key.
 # You can get a free API key by signing up on the OpenWeatherMap website: https://openweathermap.org/appid
-API_KEY = "Your_API_Key"
+API_KEY = "1de45e581f45eb1db05a7bbef83a6c62"
 BASE_URL = "http://api.openweathermap.org/data/2.5/weather"
 
 def get_weather_data(city_name):
