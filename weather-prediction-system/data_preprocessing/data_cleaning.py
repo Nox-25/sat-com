@@ -1,82 +1,56 @@
 # weather-prediction-system/data_preprocessing/data_cleaning.py
 
 import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
 
-def preprocess_weather_data(data):
+def preprocess_historical_data(historical_data):
     """
-    Cleans and preprocesses the raw weather data.
+    Preprocesses the historical weather data fetched from the NASA POWER API.
+    Converts the list of records into a pandas DataFrame and sets the date
+    as a datetime index.
 
     Args:
-        data (dict): A dictionary containing the raw weather data from the API.
+        historical_data (list): A list of dictionaries, where each dictionary
+                                represents a day's weather data.
 
     Returns:
-        pandas.DataFrame: A preprocessed DataFrame, or None if the input is invalid.
+        pandas.DataFrame: A preprocessed DataFrame with a datetime index,
+                          or None if the input is invalid.
     """
-    if not data or "main" not in data:
+    if not historical_data:
         return None
 
-    # Convert the relevant parts of the data into a DataFrame
-    df = pd.DataFrame([data["main"]])
+    try:
+        df = pd.DataFrame(historical_data)
+        df['date'] = pd.to_datetime(df['date'])
+        df.set_index('date', inplace=True)
 
-    # Add weather description
-    if "weather" in data and data["weather"]:
-        df["description"] = data["weather"][0]["description"]
-    else:
-        df["description"] = "N/A"
+        # Ensure all columns are numeric, coercing errors
+        for col in ['temperature', 'humidity', 'pressure']:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
 
-    # --- Handle Missing Values ---
-    # For this example, we'll fill missing values with the mean.
-    # In a real-world scenario, more sophisticated methods might be needed.
-    df.fillna(df.mean(numeric_only=True), inplace=True)
+        # Drop rows with any NaN values that might have been coerced
+        df.dropna(inplace=True)
 
-    # --- Normalize Numerical Features ---
-    # We will normalize the 'temp', 'pressure', and 'humidity' columns.
-    scaler = MinMaxScaler()
-    numerical_cols = ["temp", "pressure", "humidity"]
+        return df
 
-    # Ensure all numerical columns exist before trying to scale them
-    existing_numerical_cols = [col for col in numerical_cols if col in df.columns]
-    if existing_numerical_cols:
-        df[existing_numerical_cols] = scaler.fit_transform(df[existing_numerical_cols])
-
-    return df
+    except (KeyError, TypeError) as e:
+        print(f"Error during data preprocessing: {e}")
+        return None
 
 if __name__ == '__main__':
     # Example usage with sample data
-    sample_weather_data = {
-        "coord": {"lon": -0.1257, "lat": 51.5085},
-        "weather": [{"id": 800, "main": "Clear", "description": "clear sky", "icon": "01d"}],
-        "base": "stations",
-        "main": {
-            "temp": 289.92,
-            "feels_like": 289.32,
-            "temp_min": 288.71,
-            "temp_max": 290.93,
-            "pressure": 1012,
-            "humidity": 72
-        },
-        "visibility": 10000,
-        "wind": {"speed": 1.54, "deg": 350},
-        "clouds": {"all": 0},
-        "dt": 1633356000,
-        "sys": {
-            "type": 2,
-            "id": 2019646,
-            "country": "GB",
-            "sunrise": 1633327337,
-            "sunset": 1633368297
-        },
-        "timezone": 3600,
-        "id": 2643743,
-        "name": "London",
-        "cod": 200
-    }
+    sample_data = [
+        {'date': '2023-01-01', 'temperature': 9.18, 'humidity': 94.45, 'pressure': 99.89},
+        {'date': '2023-01-02', 'temperature': 4.84, 'humidity': 96.35, 'pressure': 100.76},
+        {'date': '2023-01-03', 'temperature': 7.7, 'humidity': 96.34, 'pressure': 100.91}
+    ]
 
-    preprocessed_df = preprocess_weather_data(sample_weather_data)
+    preprocessed_df = preprocess_historical_data(sample_data)
 
     if preprocessed_df is not None:
-        print("Preprocessed Weather Data:")
+        print("Preprocessed Historical Data:")
         print(preprocessed_df)
+        print("\nDataFrame Info:")
+        preprocessed_df.info()
     else:
-        print("Failed to preprocess weather data.")
+        print("Failed to preprocess historical data.")

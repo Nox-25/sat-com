@@ -5,107 +5,123 @@ import pandas as pd
 import sys
 import os
 import altair as alt
+from datetime import date, timedelta
 
 # Add the project root to the Python path to allow for module imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from data_collection.satellite_api_handler import get_weather_data
-from data_preprocessing.data_cleaning import preprocess_weather_data
-from ml_models.weather_predictor import train_weather_model, make_prediction
+from data_collection.satellite_api_handler import get_historical_weather_data
+from data_preprocessing.data_cleaning import preprocess_historical_data
+from ml_models.weather_predictor import train_time_series_model, make_time_series_prediction
 
-def display_raw_data(data):
-    """Displays the raw weather data in a structured and clean UI."""
-    st.subheader("Current Weather Conditions")
+def plot_historical_and_prediction(df_hist, prediction, prediction_date):
+    """
+    Plots the historical temperature data and the new prediction.
+    """
+    # Reset index to make 'date' a column for Altair
+    df_hist_chart = df_hist.reset_index()
 
-    # --- Main Metrics ---
-    main = data.get("main", {})
-    wind = data.get("wind", {})
-    weather_desc = data.get("weather", [{}])[0].get("description", "N/A")
+    # Create the historical data line chart
+    line = alt.Chart(df_hist_chart).mark_line().encode(
+        x=alt.X('date:T', title='Date'),
+        y=alt.Y('temperature:Q', title='Temperature (°C)'),
+        tooltip=['date:T', 'temperature:Q']
+    ).properties(
+        title="Historical Temperature Trend"
+    ).interactive()
 
-    # Convert temperatures from Kelvin to Celsius
-    temp_c = main.get("temp", 273.15) - 273.15
-    feels_like_c = main.get("feels_like", 273.15) - 273.15
+    # Create a DataFrame for the prediction point
+    df_pred = pd.DataFrame({
+        'date': [pd.to_datetime(prediction_date)],
+        'temperature': [prediction],
+        'label': ['Prediction']
+    })
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Temperature", f"{temp_c:.2f}°C", f"Feels like {feels_like_c:.2f}°C")
-    col2.metric("Humidity", f"{main.get('humidity', 'N/A')}%")
-    col3.metric("Pressure", f"{main.get('pressure', 'N/A')} hPa")
+    # Create the prediction point chart
+    point = alt.Chart(df_pred).mark_point(
+        size=100,
+        color='red',
+        filled=True
+    ).encode(
+        x='date:T',
+        y='temperature:Q',
+        tooltip=['date:T', 'temperature:Q', 'label:N']
+    )
 
-    st.markdown(f"**Description:** `{weather_desc.capitalize()}`")
+    # Combine the line chart and the prediction point
+    chart = (line + point).properties(
+        width=700,
+        height=400
+    )
 
-    # --- Detailed Metrics ---
-    with st.expander("See More Details"):
-        col1_detail, col2_detail, col3_detail = st.columns(3)
-        col1_detail.metric("Wind Speed", f"{wind.get('speed', 'N/A')} m/s")
-        col2_detail.metric("Cloudiness", f"{data.get('clouds', {}).get('all', 'N/A')}%")
-        col3_detail.metric("Visibility", f"{data.get('visibility', 'N/A')} m")
-
-        # Display min/max temperatures
-        temp_min_c = main.get("temp_min", 273.15) - 273.15
-        temp_max_c = main.get("temp_max", 273.15) - 273.15
-        col1_detail.metric("Min Temperature", f"{temp_min_c:.2f}°C")
-        col2_detail.metric("Max Temperature", f"{temp_max_c:.2f}°C")
+    st.altair_chart(chart, use_container_width=True)
 
 def main():
     st.title("Weather Prediction System")
+    st.markdown("Powered by NASA POWER API")
 
     # --- User Input ---
     city_name = st.text_input("Enter a city name:", "London")
 
-    if st.button("Get Weather and Predict"):
-        if city_name:
-            # --- 1. Data Collection ---
-            with st.spinner(f"Fetching weather data for {city_name}..."):
-                raw_data = get_weather_data(city_name)
+    st.subheader("Select Date Range for Historical Data")
+    today = date.today()
+    col1, col2 = st.columns(2)
+    # Default to a shorter range to speed up API calls
+    start_date = col1.date_input("Start Date", today - timedelta(days=90))
+    end_date = col2.date_input("End Date", today - timedelta(days=1))
 
-            if raw_data and raw_data.get("cod") == 200:
-                display_raw_data(raw_data)
+    st.subheader("Select Date for Prediction")
+    prediction_date = st.date_input("Future Date to Predict", today + timedelta(days=1))
 
-                # --- 2. Data Preprocessing & Visualization ---
-                st.subheader("2. Normalized Weather Metrics")
-                with st.spinner("Preprocessing data..."):
-                    preprocessed_data = preprocess_weather_data(raw_data)
+    if st.button("Get Historical Data and Predict"):
+        if city_name and start_date and end_date and prediction_date:
+            if start_date >= end_date:
+                st.error("Error: The start date must be before the end date.")
+                return
+            if prediction_date <= end_date:
+                st.error("Error: The prediction date must be after the historical data's end date.")
+                return
 
-                if preprocessed_data is not None:
-                    # Create a clean DataFrame for the chart
-                    chart_data = pd.DataFrame({
-                        'Metric': ['Temperature', 'Pressure', 'Humidity'],
-                        'Normalized Value': [
-                            preprocessed_data['temp'].iloc[0],
-                            preprocessed_data['pressure'].iloc[0],
-                            preprocessed_data['humidity'].iloc[0]
-                        ]
-                    })
+            # --- 1. Data Collection & Preprocessing ---
+            st.header("1. Historical Weather Data Summary")
+            with st.spinner(f"Fetching and processing historical data for {city_name}..."):
+                historical_data = get_historical_weather_data(
+                    city_name,
+                    start_date.strftime("%Y-%m-%d"),
+                    end_date.strftime("%Y-%m-%d")
+                )
 
-                    chart = alt.Chart(chart_data).mark_bar().encode(
-                        x=alt.X('Metric:N', title='Weather Metric'),
-                        y=alt.Y('Normalized Value:Q', title='Normalized Value (0 to 1)'),
-                        color='Metric:N',
-                        tooltip=['Metric', 'Normalized Value']
-                    ).properties(
-                        title="Normalized Weather Metrics"
-                    )
-                    st.altair_chart(chart, use_container_width=True)
-                    st.write("This chart shows the normalized values (scaled between 0 and 1) of the key weather metrics.")
-
-                    # --- 3. Prediction ---
-                    st.subheader("3. Weather Prediction")
-                    with st.spinner("Training model and making prediction..."):
-                        training_df = pd.concat([preprocessed_data.copy() for _ in range(10)], ignore_index=True)
-                        model = train_weather_model(training_df)
-
-                        if model:
-                            prediction = make_prediction(model, preprocessed_data)
-                            st.metric("Predicted Future Condition (Normalized)", f"{prediction[0]:.4f}")
-                            st.info("Note: This is a simulated prediction using a placeholder model.")
-                        else:
-                            st.error("Failed to train the prediction model.")
+                if historical_data:
+                    df_hist = preprocess_historical_data(historical_data)
+                    if df_hist is not None and not df_hist.empty:
+                        st.dataframe(df_hist.head())
+                    else:
+                        st.error("Data processing failed. The fetched data might be empty or in an unexpected format.")
+                        st.stop()
                 else:
-                    st.error("Failed to preprocess the data.")
-            else:
-                st.error(f"Could not fetch weather data for '{city_name}'. Please check the city name or API key.")
+                    st.error(f"Could not fetch historical weather data for '{city_name}'. Please check the city name and date range.")
+                    st.stop()
+
+            # --- 2. Model Training and Prediction ---
+            st.header("2. Weather Prediction")
+            with st.spinner("Training model and making prediction..."):
+                model = train_time_series_model(df_hist)
+                if model:
+                    prediction = make_time_series_prediction(model, prediction_date, df_hist)
+                    st.metric(
+                        label=f"Predicted Temperature for {prediction_date.strftime('%Y-%m-%d')}",
+                        value=f"{prediction:.2f}°C"
+                    )
+                else:
+                    st.error("Failed to train the prediction model.")
+                    st.stop()
+
+            # --- 3. Visualization ---
+            st.header("3. Historical Data and Prediction Visualization")
+            plot_historical_and_prediction(df_hist, prediction, prediction_date)
+
         else:
-            st.warning("Please enter a city name.")
+            st.warning("Please fill in all fields: city name, start date, end date, and prediction date.")
 
 if __name__ == "__main__":
     main()

@@ -1,94 +1,112 @@
 # weather-prediction-system/ml_models/weather_predictor.py
 
 import pandas as pd
-from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error
 import numpy as np
 
-def train_weather_model(data):
+def create_features(df, label=None):
     """
-    A placeholder function to train a weather prediction model.
-    In a real application, this would involve a more sophisticated model
-    and a much larger dataset.
+    Creates time series features from a datetime index.
+    """
+    df = df.copy()
+    df['dayofweek'] = df.index.dayofweek
+    df['quarter'] = df.index.quarter
+    df['month'] = df.index.month
+    df['year'] = df.index.year
+    df['dayofyear'] = df.index.dayofyear
+    df['dayofmonth'] = df.index.day
+    df['weekofyear'] = df.index.isocalendar().week.astype(int)
+
+    if label:
+        X = df.drop([label], axis=1)
+        y = df[label]
+        return X, y
+    return df
+
+def train_time_series_model(df):
+    """
+    Trains a time-series forecasting model using a RandomForestRegressor.
+    This model uses past temperature data to predict future temperature.
 
     Args:
-        data (pandas.DataFrame): The preprocessed training data.
+        df (pandas.DataFrame): The preprocessed historical data with a datetime index.
 
     Returns:
-        A trained model object (in this case, a simple RandomForestRegressor).
+        A trained model object with feature names stored.
     """
-    if data is None or data.empty:
+    if df is None or df.empty or 'temperature' not in df.columns:
+        print("Input DataFrame is invalid for training.")
         return None
 
-    # For this example, we'll generate some dummy target data
-    # In a real scenario, this would be the actual future weather data
-    np.random.seed(42)
-    data['future_temp'] = data['temp'] + np.random.normal(0, 0.1, len(data))
+    # Create features and target
+    X, y = create_features(df, label='temperature')
 
-    # Features (X) and target (y)
-    X = data[['temp', 'pressure', 'humidity']]
-    y = data['future_temp']
+    # Train the model
+    model = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
+    model.fit(X, y)
 
-    # Split data into training and testing sets
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    # *** FIX: Store the feature names on the model object ***
+    model.feature_names = list(X.columns)
 
-    # Initialize and train a simple model
-    model = RandomForestRegressor(n_estimators=10, random_state=42)
-    model.fit(X_train, y_train)
-
-    # Evaluate the model (optional, for demonstration)
-    predictions = model.predict(X_test)
-    mse = mean_squared_error(y_test, predictions)
-    print(f"Model Mean Squared Error: {mse:.4f}")
-
+    print("Time-series model trained successfully.")
     return model
 
-def make_prediction(model, input_data):
+def make_time_series_prediction(model, prediction_date, historical_df):
     """
-    Makes a weather prediction using the trained model.
+    Makes a weather prediction for a future date.
 
     Args:
-        model: The trained model object.
-        input_data (pandas.DataFrame): The input data for prediction.
+        model: The trained time-series model, with `feature_names` attribute.
+        prediction_date (datetime.date): The date for which to make a prediction.
+        historical_df (pandas.DataFrame): The historical data, used for context.
 
     Returns:
-        The prediction.
+        float: The predicted temperature.
     """
-    if model is None or input_data is None or input_data.empty:
+    if model is None or not hasattr(model, 'feature_names'):
+        print("Model is invalid or does not have feature names.")
         return None
 
-    # Ensure input_data has the right columns
-    input_features = input_data[['temp', 'pressure', 'humidity']]
+    # Create a DataFrame for the prediction date to generate features
+    future_date_index = pd.to_datetime([prediction_date])
+    future_df = pd.DataFrame(index=future_date_index)
 
-    prediction = model.predict(input_features)
-    return prediction
+    # Generate the same date-based features
+    future_features = create_features(future_df)
+
+    # Use the mean of the historical data for the other features
+    future_features['humidity'] = historical_df['humidity'].mean()
+    future_features['pressure'] = historical_df['pressure'].mean()
+
+    # *** FIX: Reorder the columns to match the training order ***
+    future_features = future_features[model.feature_names]
+
+    prediction = model.predict(future_features)
+    return prediction[0]
 
 if __name__ == '__main__':
     # Example usage:
-    # 1. Create some sample preprocessed data
-    sample_data = {
-        'temp': [0.5, 0.6, 0.4, 0.7],
-        'pressure': [0.8, 0.7, 0.9, 0.6],
-        'humidity': [0.4, 0.5, 0.3, 0.6]
-    }
-    df = pd.DataFrame(sample_data)
+    # 1. Create sample historical data
+    date_rng = pd.date_range(start='2022-01-01', end='2023-01-01', freq='D')
+    sample_df = pd.DataFrame(date_rng, columns=['date'])
+    sample_df['temperature'] = np.random.randint(0, 25, size=(len(date_rng)))
+    sample_df['humidity'] = np.random.randint(70, 100, size=(len(date_rng)))
+    sample_df['pressure'] = np.random.randint(98, 102, size=(len(date_rng)))
+    sample_df.set_index('date', inplace=True)
 
     # 2. Train the model
-    print("Training a dummy weather model...")
-    trained_model = train_weather_model(df)
+    print("Training a dummy time-series model...")
+    trained_model = train_time_series_model(sample_df)
 
-    # 3. Make a prediction on new data
+    # 3. Make a prediction for a future date
     if trained_model:
-        new_data_point = pd.DataFrame({
-            'temp': [0.55],
-            'pressure': [0.75],
-            'humidity': [0.45]
-        })
-        print("\nMaking a prediction for a new data point...")
-        prediction = make_prediction(trained_model, new_data_point)
+        future_date = pd.to_datetime('2023-01-02').date()
+        print(f"\nMaking a prediction for {future_date}...")
+        # Pass the historical df for context
+        prediction = make_time_series_prediction(trained_model, future_date, sample_df)
         if prediction is not None:
-            print(f"Predicted future temperature: {prediction[0]:.4f}")
+            print(f"Predicted temperature: {prediction:.2f}°C")
         else:
             print("Failed to make a prediction.")
     else:
