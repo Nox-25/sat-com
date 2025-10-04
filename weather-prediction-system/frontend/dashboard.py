@@ -4,124 +4,147 @@ import streamlit as st
 import pandas as pd
 import sys
 import os
+from datetime import datetime
 import altair as alt
-from datetime import date, timedelta
 
-# Add the project root to the Python path to allow for module imports
+# Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from data_collection.satellite_api_handler import get_historical_weather_data
-from data_preprocessing.data_cleaning import preprocess_historical_data
-from ml_models.weather_predictor import train_time_series_model, make_time_series_prediction
+from data_collection.satellite_api_handler import get_weather_data
 
-def plot_historical_and_prediction(df_hist, prediction, prediction_date):
-    """
-    Plots the historical temperature data and the new prediction.
-    """
-    # Reset index to make 'date' a column for Altair
-    df_hist_chart = df_hist.reset_index()
+def display_current_weather(data):
+    """Displays the current weather conditions in a structured UI."""
+    st.subheader("Current Climatic Conditions")
 
-    # Create the historical data line chart
-    line = alt.Chart(df_hist_chart).mark_line().encode(
-        x=alt.X('date:T', title='Date'),
-        y=alt.Y('temperature:Q', title='Temperature (°C)'),
-        tooltip=['date:T', 'temperature:Q']
+    current = data.get('current', {})
+    if not current:
+        st.warning("Current weather data not available.")
+        return
+
+    main = current.get("main", {})
+    wind = current.get("wind", {})
+    weather_desc = current.get("weather", [{}])[0].get("description", "N/A")
+
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Temperature", f"{main.get('temp', 'N/A')}°C", f"Feels like {main.get('feels_like', 'N/A')}°C")
+    col2.metric("Humidity", f"{main.get('humidity', 'N/A')}%")
+    col3.metric("Pressure", f"{main.get('pressure', 'N/A')} hPa")
+
+    st.markdown(f"**Condition:** `{weather_desc.capitalize()}`")
+
+    with st.expander("See More Details (including Lat/Lon)"):
+        coords = current.get("coord", {})
+        sys_info = current.get("sys", {})
+
+        st.metric("Latitude", f"{coords.get('lat', 'N/A')}")
+        st.metric("Longitude", f"{coords.get('lon', 'N/A')}")
+
+        col1_detail, col2_detail, col3_detail = st.columns(3)
+        col1_detail.metric("Wind Speed", f"{wind.get('speed', 'N/A')} m/s")
+        col2_detail.metric("Cloudiness", f"{current.get('clouds', {}).get('all', 'N/A')}%")
+        col3_detail.metric("Visibility", f"{current.get('visibility', 'N/A')} m")
+
+        sunrise = datetime.utcfromtimestamp(sys_info.get('sunrise', 0)).strftime('%H:%M:%S UTC') if sys_info.get('sunrise') else 'N/A'
+        sunset = datetime.utcfromtimestamp(sys_info.get('sunset', 0)).strftime('%H:%M:%S UTC') if sys_info.get('sunset') else 'N/A'
+        col1_detail.metric("Sunrise", sunrise)
+        col2_detail.metric("Sunset", sunset)
+
+def display_hourly_forecast(data):
+    """Displays the 3-hour interval forecast for the next 24 hours."""
+    st.subheader("Hourly Forecast (in 3-hour intervals)")
+
+    forecast_list = data.get('forecast', {}).get('list', [])
+    if not forecast_list:
+        st.warning("Hourly forecast data not available.")
+        return
+
+    for item in forecast_list[:8]:
+        dt_time = datetime.utcfromtimestamp(item.get('dt', 0))
+        time_str = dt_time.strftime('%Y-%m-%d %H:%M')
+
+        main = item.get('main', {})
+        weather_desc = item.get('weather', [{}])[0].get('description', 'N/A')
+
+        st.markdown(f"**{time_str} UTC**")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Temp", f"{main.get('temp', 'N/A')}°C")
+        col2.metric("Humidity", f"{main.get('humidity', 'N/A')}%")
+        col3.metric("Condition", weather_desc.capitalize())
+        st.divider()
+
+def display_visualizations(data):
+    """Displays the graph and map visualizations."""
+    st.subheader("Visualizations")
+
+    forecast_list = data.get('forecast', {}).get('list', [])
+    if not forecast_list:
+        st.warning("Forecast data not available for visualization.")
+        return
+
+    # --- Temperature Graph ---
+    df_forecast = pd.DataFrame(forecast_list)
+    df_forecast['dt_txt'] = pd.to_datetime(df_forecast['dt_txt'])
+    df_forecast['temp'] = df_forecast['main'].apply(lambda x: x.get('temp'))
+
+    temp_chart = alt.Chart(df_forecast).mark_line().encode(
+        x=alt.X('dt_txt:T', title='Time'),
+        y=alt.Y('temp:Q', title='Temperature (°C)'),
+        tooltip=['dt_txt:T', 'temp:Q']
     ).properties(
-        title="Historical Temperature Trend"
+        title="Temperature Forecast (Next 5 Days, 3-hr intervals)"
     ).interactive()
+    st.altair_chart(temp_chart, use_container_width=True)
 
-    # Create a DataFrame for the prediction point
-    df_pred = pd.DataFrame({
-        'date': [pd.to_datetime(prediction_date)],
-        'temperature': [prediction],
-        'label': ['Prediction']
-    })
+    # --- Location Map ---
+    coords = data.get('current', {}).get('coord', {})
+    if coords:
+        map_df = pd.DataFrame([{'lat': coords['lat'], 'lon': coords['lon']}])
+        st.map(map_df)
+        st.info("Live weather map layers (clouds, precipitation) require a premium subscription to OpenWeatherMap's API.")
 
-    # Create the prediction point chart
-    point = alt.Chart(df_pred).mark_point(
-        size=100,
-        color='red',
-        filled=True
-    ).encode(
-        x='date:T',
-        y='temperature:Q',
-        tooltip=['date:T', 'temperature:Q', 'label:N']
-    )
+def display_prediction_summary(data):
+    """Displays a simple summary of the forecast."""
+    st.subheader("Prediction Summary")
 
-    # Combine the line chart and the prediction point
-    chart = (line + point).properties(
-        width=700,
-        height=400
-    )
+    forecast_list = data.get('forecast', {}).get('list', [])
+    if not forecast_list:
+        st.warning("Forecast data not available for summary.")
+        return
 
-    st.altair_chart(chart, use_container_width=True)
+    # Find the min and max temp from the forecast
+    temps = [item['main']['temp'] for item in forecast_list]
+    min_temp = min(temps)
+    max_temp = max(temps)
+
+    # Get the most common weather condition
+    conditions = [item['weather'][0]['main'] for item in forecast_list[:8]]
+    most_common_condition = max(set(conditions), key=conditions.count)
+
+    summary_text = f"""
+    Over the next few days, the temperature will range from a low of **{min_temp}°C** to a high of **{max_temp}°C**.
+    The weather will predominantly feature **{most_common_condition}**.
+    """
+    st.markdown(summary_text)
 
 def main():
     st.title("Weather Prediction System")
-    st.markdown("Powered by NASA POWER API")
 
-    # --- User Input ---
     city_name = st.text_input("Enter a city name:", "London")
 
-    st.subheader("Select Date Range for Historical Data")
-    today = date.today()
-    col1, col2 = st.columns(2)
-    # Default to a shorter range to speed up API calls
-    start_date = col1.date_input("Start Date", today - timedelta(days=90))
-    end_date = col2.date_input("End Date", today - timedelta(days=1))
+    if st.button("Get Weather"):
+        if city_name:
+            with st.spinner(f"Fetching weather data for {city_name}..."):
+                weather_data = get_weather_data(city_name)
 
-    st.subheader("Select Date for Prediction")
-    prediction_date = st.date_input("Future Date to Predict", today + timedelta(days=1))
-
-    if st.button("Get Historical Data and Predict"):
-        if city_name and start_date and end_date and prediction_date:
-            if start_date >= end_date:
-                st.error("Error: The start date must be before the end date.")
-                return
-            if prediction_date <= end_date:
-                st.error("Error: The prediction date must be after the historical data's end date.")
-                return
-
-            # --- 1. Data Collection & Preprocessing ---
-            st.header("1. Historical Weather Data Summary")
-            with st.spinner(f"Fetching and processing historical data for {city_name}..."):
-                historical_data = get_historical_weather_data(
-                    city_name,
-                    start_date.strftime("%Y-%m-%d"),
-                    end_date.strftime("%Y-%m-%d")
-                )
-
-                if historical_data:
-                    df_hist = preprocess_historical_data(historical_data)
-                    if df_hist is not None and not df_hist.empty:
-                        st.dataframe(df_hist.head())
-                    else:
-                        st.error("Data processing failed. The fetched data might be empty or in an unexpected format.")
-                        st.stop()
-                else:
-                    st.error(f"Could not fetch historical weather data for '{city_name}'. Please check the city name and date range.")
-                    st.stop()
-
-            # --- 2. Model Training and Prediction ---
-            st.header("2. Weather Prediction")
-            with st.spinner("Training model and making prediction..."):
-                model = train_time_series_model(df_hist)
-                if model:
-                    prediction = make_time_series_prediction(model, prediction_date, df_hist)
-                    st.metric(
-                        label=f"Predicted Temperature for {prediction_date.strftime('%Y-%m-%d')}",
-                        value=f"{prediction:.2f}°C"
-                    )
-                else:
-                    st.error("Failed to train the prediction model.")
-                    st.stop()
-
-            # --- 3. Visualization ---
-            st.header("3. Historical Data and Prediction Visualization")
-            plot_historical_and_prediction(df_hist, prediction, prediction_date)
-
+            if weather_data and 'current' in weather_data and 'forecast' in weather_data:
+                display_current_weather(weather_data)
+                display_hourly_forecast(weather_data)
+                display_visualizations(weather_data)
+                display_prediction_summary(weather_data)
+            else:
+                st.error(f"Could not fetch complete weather data for '{city_name}'. Please check the city name or API key.")
         else:
-            st.warning("Please fill in all fields: city name, start date, end date, and prediction date.")
+            st.warning("Please enter a city name.")
 
 if __name__ == "__main__":
     main()

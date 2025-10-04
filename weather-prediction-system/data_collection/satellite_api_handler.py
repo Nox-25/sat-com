@@ -2,13 +2,11 @@
 
 import requests
 import json
-from datetime import datetime
 
-# The user-provided NASA POWER API key.
-# Based on documentation, this is not typically used as a URL parameter
-# for the basic public API, but it's stored here as requested.
-API_KEY = "LLG5HAJdq5vhOr9smY9QLnJibDNgPk6PsTt9Xfsf"
-NASA_POWER_API_URL = "https://power.larc.nasa.gov/api/temporal/daily/point"
+# The user-provided OpenWeatherMap API key.
+API_KEY = "fec017c5aa337914a16aca5e3e7c154b"
+CURRENT_WEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
+FORECAST_URL = "https://api.openweathermap.org/data/2.5/forecast"
 GEOCODING_API_URL = "https://nominatim.openstreetmap.org/search"
 
 def get_coordinates(city_name):
@@ -31,101 +29,79 @@ def get_coordinates(city_name):
         print(f"Error during geocoding for '{city_name}': {e}")
     return None
 
-def get_historical_weather_data(city_name, start_date, end_date):
+def get_weather_data(city_name):
     """
-    Fetches historical weather data from the NASA POWER API.
+    Fetches current weather and 5-day/3-hour forecast data using the standard
+    OpenWeatherMap APIs.
 
     Args:
         city_name (str): The name of the city.
-        start_date (str): The start date in YYYY-MM-DD format.
-        end_date (str): The end date in YYYY-MM-DD format.
 
     Returns:
-        dict: A dictionary containing the parsed historical weather data, or None on failure.
+        dict: A dictionary containing both 'current' and 'forecast' data, or None on failure.
     """
     coords = get_coordinates(city_name)
     if not coords:
         print(f"Could not get coordinates for '{city_name}'.")
         return None
 
-    try:
-        start_str = datetime.strptime(start_date, "%Y-%m-%d").strftime("%Y%m%d")
-        end_str = datetime.strptime(end_date, "%Y-%m-%d").strftime("%Y%m%d")
-    except ValueError:
-        print("Invalid date format. Please use YYYY-MM-DD.")
-        return None
-
-    params = {
-        "parameters": "T2M,RH2M,PS",  # Temp at 2m, Humidity at 2m, Surface Pressure
-        "community": "RE",
-        "longitude": coords["longitude"],
-        "latitude": coords["latitude"],
-        "start": start_str,
-        "end": end_str,
-        "format": "JSON",
+    # --- Fetch Current Weather ---
+    current_params = {
+        "lat": coords["latitude"],
+        "lon": coords["longitude"],
+        "appid": API_KEY,
+        "units": "metric",
     }
-
     try:
-        response = requests.get(NASA_POWER_API_URL, params=params, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-
-        # Parse the data into a more friendly format (e.g., a DataFrame-like structure)
-        return parse_nasa_power_data(data)
-
+        current_response = requests.get(CURRENT_WEATHER_URL, params=current_params, timeout=30)
+        current_response.raise_for_status()
+        current_data = current_response.json()
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching NASA POWER data: {e}")
+        print(f"Error fetching current weather: {e}")
+        return None
     except json.JSONDecodeError:
-        print(f"Error decoding NASA POWER API response. Response was: {response.text}")
-    return None
-
-def parse_nasa_power_data(raw_data):
-    """
-    Parses the complex JSON structure from the NASA POWER API into a simple
-    list of records, which is easier to convert to a pandas DataFrame.
-    """
-    params = raw_data.get('properties', {}).get('parameter', {})
-    if not params:
+        print(f"Error decoding current weather response: {current_response.text}")
         return None
 
-    # Assuming T2M, RH2M, PS are the requested parameters
-    t2m = params.get('T2M', {})
-    rh2m = params.get('RH2M', {})
-    ps = params.get('PS', {})
+    # --- Fetch 5-Day/3-Hour Forecast ---
+    forecast_params = {
+        "lat": coords["latitude"],
+        "lon": coords["longitude"],
+        "appid": API_KEY,
+        "units": "metric",
+    }
+    try:
+        forecast_response = requests.get(FORECAST_URL, params=forecast_params, timeout=30)
+        forecast_response.raise_for_status()
+        forecast_data = forecast_response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching forecast weather: {e}")
+        return None
+    except json.JSONDecodeError:
+        print(f"Error decoding forecast weather response: {forecast_response.text}")
+        return None
 
-    dates = list(t2m.keys())
-    records = []
-
-    for date_str in dates:
-        # The API returns -999 for missing values
-        temp = t2m.get(date_str)
-        humidity = rh2m.get(date_str)
-        pressure = ps.get(date_str)
-
-        if -999 in (temp, humidity, pressure):
-            continue # Skip days with missing data
-
-        records.append({
-            "date": datetime.strptime(date_str, "%Y%m%d").strftime("%Y-%m-%d"),
-            "temperature": temp,
-            "humidity": humidity,
-            "pressure": pressure
-        })
-
-    return records
+    return {
+        "current": current_data,
+        "forecast": forecast_data
+    }
 
 if __name__ == '__main__':
     # Example usage:
     city = "London"
-    start = "2023-01-01"
-    end = "2023-01-05"
 
-    print(f"Fetching historical weather data for {city} from {start} to {end}...")
-    historical_data = get_historical_weather_data(city, start, end)
+    print(f"Fetching current and forecast weather for {city}...")
+    weather_data = get_weather_data(city)
 
-    if historical_data:
-        print("Successfully fetched and parsed data:")
-        for record in historical_data[:3]: # Print first 3 records
-            print(record)
+    if weather_data:
+        print("\nSuccessfully fetched data:")
+        if 'current' in weather_data:
+            print(f"  Current Temp: {weather_data['current'].get('main', {}).get('temp')}°C")
+            print(f"  Current Condition: {weather_data['current']['weather'][0]['description']}")
+
+        if 'forecast' in weather_data:
+            print(f"  Forecast timestamps available: {len(weather_data['forecast'].get('list', []))}")
+            if weather_data['forecast'].get('list'):
+                print(f"  Temp in 3 hours: {weather_data['forecast']['list'][0]['main']['temp']}°C")
     else:
-        print("Failed to fetch historical weather data.")
+        print("\nFailed to fetch weather data.")
