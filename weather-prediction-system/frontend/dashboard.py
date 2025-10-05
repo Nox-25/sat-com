@@ -99,31 +99,18 @@ def display_visualizations(data):
     ).interactive()
     st.altair_chart(temp_chart, use_container_width=True)
 
-    # --- NASA GIBS Map ---
+    # --- Stable Location Map ---
     coords = current_data.get('coord', {})
     if coords:
-        # Using the TMS URL format for better compatibility
-        gibs_layer = 'MODIS_Terra_CorrectedReflectance_TrueColor'
-        current_date = datetime.utcnow().strftime('%Y-%m-%d')
-        tile_url = (
-            'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/'
-            f'{gibs_layer}/default/{current_date}/1km/{{z}}/{{y}}/{{x}}.jpg'
-        )
+        # Create a simple folium map centered on the location
+        m = folium.Map(location=[coords['lat'], coords['lon']], zoom_start=10)
 
-        m = folium.Map(location=[coords['lat'], coords['lon']], zoom_start=5)
-
-        folium.TileLayer(
-            tiles=tile_url,
-            attr='NASA GIBS',
-            name='NASA True Color',
-            overlay=True,
-            control=True
-        ).add_to(m)
-
+        # Add a marker for the selected location
         folium.Marker([coords['lat'], coords['lon']], popup=current_data.get('name', 'Selected Location')).add_to(m)
-        folium.LayerControl().add_to(m)
 
+        # Render the map in Streamlit
         st_folium(m, width=725, height=500)
+        st.info("A stable location map is provided. Live satellite overlays from NASA GIBS were found to cause instability and have been removed to ensure a smooth user experience.")
     else:
         st.warning("Coordinates not available for map visualization.")
 
