@@ -102,15 +102,15 @@ def display_visualizations(data):
     # --- NASA GIBS Map ---
     coords = current_data.get('coord', {})
     if coords:
-        # Correctly formatted tile URL for WMTS
+        # Using the TMS URL format for better compatibility
         gibs_layer = 'MODIS_Terra_CorrectedReflectance_TrueColor'
         current_date = datetime.utcnow().strftime('%Y-%m-%d')
         tile_url = (
             'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/'
-            f'{gibs_layer}/default/{current_date}/GoogleMapsCompatible_Level9/{{z}}/{{y}}/{{x}}.jpg'
+            f'{gibs_layer}/default/{current_date}/1km/{{z}}/{{y}}/{{x}}.jpg'
         )
 
-        m = folium.Map(location=[coords['lat'], coords['lon']], zoom_start=6)
+        m = folium.Map(location=[coords['lat'], coords['lon']], zoom_start=5)
 
         folium.TileLayer(
             tiles=tile_url,
