@@ -1,4 +1,5 @@
 from playwright.sync_api import sync_playwright, expect
+from datetime import datetime
 
 def verify_streamlit_app():
     with sync_playwright() as p:
@@ -18,10 +19,10 @@ def verify_streamlit_app():
             expect(predict_button).to_be_enabled()
             predict_button.click()
 
-            # 4. Wait for the final section to appear
-            # The "Prediction Summary" is the last element to be rendered.
-            # We give it a generous timeout to allow for the API calls.
-            expect(page.get_by_text("Prediction Summary")).to_be_visible(timeout=60000)
+            # 4. Wait for the folium map to render
+            # We locate the iframe that st_folium creates and wait for a tile container within it.
+            map_frame = page.frame_locator("iframe[title='streamlit-folium.st_folium']")
+            expect(map_frame.locator(".folium-tile-container")).to_be_visible(timeout=30000)
 
             # 5. Take a screenshot of the entire page
             page.screenshot(path="jules-scratch/verification/final_verification.png", full_page=True)

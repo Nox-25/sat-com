@@ -6,6 +6,8 @@ import sys
 import os
 from datetime import datetime
 import altair as alt
+import folium
+from streamlit_folium import st_folium
 
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -77,8 +79,10 @@ def display_visualizations(data):
     st.subheader("Visualizations")
 
     forecast_list = data.get('forecast', {}).get('list', [])
-    if not forecast_list:
-        st.warning("Forecast data not available for visualization.")
+    current_data = data.get('current', {})
+
+    if not forecast_list or not current_data:
+        st.warning("Data not available for visualization.")
         return
 
     # --- Temperature Graph ---
@@ -95,12 +99,33 @@ def display_visualizations(data):
     ).interactive()
     st.altair_chart(temp_chart, use_container_width=True)
 
-    # --- Location Map ---
-    coords = data.get('current', {}).get('coord', {})
+    # --- NASA GIBS Map ---
+    coords = current_data.get('coord', {})
     if coords:
-        map_df = pd.DataFrame([{'lat': coords['lat'], 'lon': coords['lon']}])
-        st.map(map_df)
-        st.info("Live weather map layers (clouds, precipitation) require a premium subscription to OpenWeatherMap's API.")
+        # Correctly formatted tile URL for WMTS
+        gibs_layer = 'MODIS_Terra_CorrectedReflectance_TrueColor'
+        current_date = datetime.utcnow().strftime('%Y-%m-%d')
+        tile_url = (
+            'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/'
+            f'{gibs_layer}/default/{current_date}/GoogleMapsCompatible_Level9/{{z}}/{{y}}/{{x}}.jpg'
+        )
+
+        m = folium.Map(location=[coords['lat'], coords['lon']], zoom_start=6)
+
+        folium.TileLayer(
+            tiles=tile_url,
+            attr='NASA GIBS',
+            name='NASA True Color',
+            overlay=True,
+            control=True
+        ).add_to(m)
+
+        folium.Marker([coords['lat'], coords['lon']], popup=current_data.get('name', 'Selected Location')).add_to(m)
+        folium.LayerControl().add_to(m)
+
+        st_folium(m, width=725, height=500)
+    else:
+        st.warning("Coordinates not available for map visualization.")
 
 def display_prediction_summary(data):
     """Displays a simple summary of the forecast."""
@@ -111,12 +136,10 @@ def display_prediction_summary(data):
         st.warning("Forecast data not available for summary.")
         return
 
-    # Find the min and max temp from the forecast
     temps = [item['main']['temp'] for item in forecast_list]
     min_temp = min(temps)
     max_temp = max(temps)
 
-    # Get the most common weather condition
     conditions = [item['weather'][0]['main'] for item in forecast_list[:8]]
     most_common_condition = max(set(conditions), key=conditions.count)
 
