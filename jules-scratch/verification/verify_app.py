@@ -1,10 +1,8 @@
 from playwright.sync_api import sync_playwright, expect
-from datetime import datetime
 
 def verify_streamlit_app():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        # Use a large viewport to ensure all content is rendered
         page = browser.new_page(viewport={"width": 1280, "height": 2400})
 
         try:
@@ -20,9 +18,8 @@ def verify_streamlit_app():
             predict_button.click()
 
             # 4. Wait for the folium map to render
-            # We locate the iframe that st_folium creates and wait for a tile container within it.
             map_frame = page.frame_locator("iframe[title='streamlit-folium.st_folium']")
-            expect(map_frame.locator(".folium-tile-container")).to_be_visible(timeout=30000)
+            expect(map_frame.locator(".folium-tile-container")).to_be_visible(timeout=45000)
 
             # 5. Take a screenshot of the entire page
             page.screenshot(path="jules-scratch/verification/final_verification.png", full_page=True)

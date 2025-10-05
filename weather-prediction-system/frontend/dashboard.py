@@ -99,18 +99,13 @@ def display_visualizations(data):
     ).interactive()
     st.altair_chart(temp_chart, use_container_width=True)
 
-    # --- Stable Location Map ---
+    # --- Location Map ---
     coords = current_data.get('coord', {})
     if coords:
-        # Create a simple folium map centered on the location
         m = folium.Map(location=[coords['lat'], coords['lon']], zoom_start=10)
-
-        # Add a marker for the selected location
         folium.Marker([coords['lat'], coords['lon']], popup=current_data.get('name', 'Selected Location')).add_to(m)
-
-        # Render the map in Streamlit
         st_folium(m, width=725, height=500)
-        st.info("A stable location map is provided. Live satellite overlays from NASA GIBS were found to cause instability and have been removed to ensure a smooth user experience.")
+        st.info("A stable location map is provided.")
     else:
         st.warning("Coordinates not available for map visualization.")
 
