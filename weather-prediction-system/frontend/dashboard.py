@@ -12,7 +12,7 @@ from streamlit_folium import st_folium
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from data_collection.satellite_api_handler import get_weather_data
+from data_collection.satellite_api_handler import get_weather_data, get_satellite_data
 
 def display_current_weather(data):
     """Displays the current weather conditions in a structured UI."""
@@ -102,10 +102,31 @@ def display_visualizations(data):
     # --- Location Map ---
     coords = current_data.get('coord', {})
     if coords:
-        m = folium.Map(location=[coords['lat'], coords['lon']], zoom_start=10)
-        folium.Marker([coords['lat'], coords['lon']], popup=current_data.get('name', 'Selected Location')).add_to(m)
+        st.subheader("Satellite Map")
+        with st.spinner("Fetching satellite data..."):
+            satellite_data = get_satellite_data(coords['lat'], coords['lon'])
+
+        m = folium.Map(location=[coords['lat'], coords['lon']], zoom_start=4)
+
+        if satellite_data and 'above' in satellite_data:
+            for sat in satellite_data['above']:
+                folium.Marker(
+                    [sat['satlat'], sat['satlng']],
+                    popup=f"<b>{sat['satname']}</b><br>Altitude: {sat['satalt']} km",
+                    tooltip=sat['satname'],
+                    icon=folium.Icon(color='red', icon='satellite')
+                ).add_to(m)
+            st.info(f"Found {len(satellite_data['above'])} satellites above the location.")
+        else:
+            st.warning("Could not retrieve satellite data or no satellites found.")
+
+        folium.Marker(
+            [coords['lat'], coords['lon']],
+            popup=current_data.get('name', 'Selected Location'),
+            icon=folium.Icon(color='blue', icon='info-sign')
+        ).add_to(m)
+
         st_folium(m, width=725, height=500)
-        st.info("A stable location map is provided.")
     else:
         st.warning("Coordinates not available for map visualization.")
 
