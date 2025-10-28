@@ -6,13 +6,11 @@ import sys
 import os
 from datetime import datetime
 import altair as alt
-import folium
-from streamlit_folium import st_folium
 
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from data_collection.satellite_api_handler import get_weather_data, get_satellite_data
+from data_collection.satellite_api_handler import get_weather_data
 
 def display_current_weather(data):
     """Displays the current weather conditions in a structured UI."""
@@ -99,39 +97,7 @@ def display_visualizations(data):
     ).interactive()
     st.altair_chart(temp_chart, use_container_width=True)
 
-    # --- Location Map ---
-    coords = current_data.get('coord', {})
-    if coords:
-        st.subheader("Satellite Map")
-
-        # Initialize map in session state if it doesn't exist
-        if 'map' not in st.session_state:
-            st.session_state.map = folium.Map(location=[coords['lat'], coords['lon']], zoom_start=4)
-
-            with st.spinner("Fetching satellite data..."):
-                satellite_data = get_satellite_data(coords['lat'], coords['lon'])
-
-            if satellite_data and 'above' in satellite_data:
-                for sat in satellite_data['above']:
-                    folium.Marker(
-                        [sat['satlat'], sat['satlng']],
-                        popup=f"<b>{sat['satname']}</b><br>Altitude: {sat['satalt']} km",
-                        tooltip=sat['satname'],
-                        icon=folium.Icon(color='red', icon='satellite')
-                    ).add_to(st.session_state.map)
-                st.info(f"Found {len(satellite_data['above'])} satellites above the location.")
-            else:
-                st.warning("Could not retrieve satellite data or no satellites found.")
-
-            folium.Marker(
-                [coords['lat'], coords['lon']],
-                popup=current_data.get('name', 'Selected Location'),
-                icon=folium.Icon(color='blue', icon='info-sign')
-            ).add_to(st.session_state.map)
-
-        st_folium(st.session_state.map, width=725, height=500)
-    else:
-        st.warning("Coordinates not available for map visualization.")
+    pass
 
 def display_prediction_summary(data):
     """Displays a simple summary of the forecast."""
@@ -158,17 +124,9 @@ def display_prediction_summary(data):
 def main():
     st.title("Weather Prediction System")
 
-    if 'city' not in st.session_state:
-        st.session_state.city = "London"
-
-    city_name = st.text_input("Enter a city name:", st.session_state.city)
+    city_name = st.text_input("Enter a city name:", "London")
 
     if st.button("Get Weather"):
-        if city_name != st.session_state.city:
-            # Clear the map from session state to force a re-render
-            if 'map' in st.session_state:
-                del st.session_state.map
-            st.session_state.city = city_name
 
         if city_name:
             with st.spinner(f"Fetching weather data for {city_name}..."):

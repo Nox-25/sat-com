@@ -105,23 +105,3 @@ if __name__ == '__main__':
                 print(f"  Temp in 3 hours: {weather_data['forecast']['list'][0]['main']['temp']}°C")
     else:
         print("\nFailed to fetch weather data.")
-
-# N2YO API for satellite tracking
-N2YO_API_KEY = "GEX2JJ-QHLYUZ-VYLXFG-5LAP"
-N2YO_API_URL = "https://api.n2yo.com/rest/v1/satellite/above/{lat}/{lng}/0/70/18/&apiKey={api_key}"
-
-
-def get_satellite_data(latitude, longitude):
-    """
-    Fetches satellite data from the N2YO API.
-    """
-    url = N2YO_API_URL.format(lat=latitude, lng=longitude, api_key=N2YO_API_KEY)
-    try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching satellite data: {e}")
-    except json.JSONDecodeError:
-        print(f"Error decoding satellite data response: {response.text}")
-    return None
