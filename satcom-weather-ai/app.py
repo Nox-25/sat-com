@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
+import os
 
 # Import your modules
 import modules.weather_api as weather_api
@@ -22,8 +23,15 @@ st.set_page_config(
 @st.cache_data
 def load_data():
     """Load historical weather data and city geocodes."""
-    historical_data = pd.read_csv('satcom-weather-ai/data/sample_weather.csv')
-    city_geocodes = pd.read_csv('satcom-weather-ai/data/city_geocodes.csv')
+    # Get the absolute path of the current script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # Construct paths to the data files
+    historical_data_path = os.path.join(script_dir, 'data', 'sample_weather.csv')
+    city_geocodes_path = os.path.join(script_dir, 'data', 'city_geocodes.csv')
+
+    historical_data = pd.read_csv(historical_data_path)
+    city_geocodes = pd.read_csv(city_geocodes_path)
     return historical_data, city_geocodes
 
 historical_data, city_geocodes = load_data()

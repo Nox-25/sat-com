@@ -6,13 +6,19 @@ import joblib
 import os
 
 class KNNModel:
-    def __init__(self, model_path='satcom-weather-ai/models/knn_model.pkl'):
-        self.model_path = model_path
+    def __init__(self, model_path=None):
+        self.script_dir = os.path.dirname(os.path.abspath(__file__))
+        if model_path is None:
+            self.model_path = os.path.join(self.script_dir, 'knn_model.pkl')
+        else:
+            self.model_path = model_path
         self.model = None
         self.scaler = None
 
-    def train(self, data_path='satcom-weather-ai/data/sample_weather.csv'):
+    def train(self, data_path=None):
         """Train the KNN model and save it."""
+        if data_path is None:
+            data_path = os.path.join(self.script_dir, '..', 'data', 'sample_weather.csv')
         df = pd.read_csv(data_path)
         features = ['temperature', 'humidity', 'pressure', 'wind_speed', 'precipitation', 'cloud_cover']
         target = 'risk_level'
